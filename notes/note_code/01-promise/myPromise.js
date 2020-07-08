@@ -6,7 +6,12 @@ const REJECTED = 'rejected' // 等待
 
 class MyPromise {
   constructor(executor) {
-    executor(this.resolve, this.reject)
+    try {
+      executor(this.resolve, this.reject)
+    } catch (e) {
+      // 捕获执行器的错误
+      this.reject(e)
+    }
   }
 
   // Promise状态：初始值为pending
@@ -32,7 +37,7 @@ class MyPromise {
     this.value = value
     // 判断成功回调是否存在，如果存在就调用
     // 从前往后执行并清理
-    while (this.successCallback.length) this.successCallback.shift()(value)
+    while (this.successCallback.length) this.successCallback.shift()()
   }
 
   reject = reason => {
@@ -44,28 +49,123 @@ class MyPromise {
     this.reason = reason
     // 判断失败回调是否存在，如果存在就调用
     // 从前往后执行并清理
-    while (this.failCallback.length) this.failCallback.shift()(reason)
+    while (this.failCallback.length) this.failCallback.shift()()
   }
 
   // then内部的this需要指向调用它的上下文
   then(successCallback, failCallback) {
+    // 补充回调
+    successCallback = successCallback ? successCallback : value => value
+    failCallback = failCallback
+      ? failCallback
+      : reason => {
+          throw reason
+        }
     // 创建一个promise对象
     let promise2 = new MyPromise((resolve, reject) => {
       // 判断状态
       if (this.status === FULFILLED) {
-        let x = successCallback(this.value)
-        resolve(x)
+        setTimeout(() => {
+          try {
+            let x = successCallback(this.value)
+            /** 封装逻辑
+             * 判断 x 的值是普通值还是promise对象
+             * 普通值：直接调用resolve
+             * promise对象：
+             *   查看promise对象返回的结果
+             *   再根据promise对象返回的结果，决定调用resolve 还是 reject
+             */
+            resolvePromise(promise2, x, resolve, reject)
+          } catch (e) {
+            reject(e)
+          }
+        }, 0)
       } else if (this.status === REJECTED) {
-        failCallback(this.reason)
+        setTimeout(() => {
+          try {
+            let x = failCallback(this.reason)
+            resolvePromise(promise2, x, resolve, reject)
+          } catch (e) {
+            reject(e)
+          }
+        }, 0)
       } else {
         // 等待
         // 将成功回调和失败回调存储起来
-        this.successCallback.push(successCallback)
-        this.failCallback.push(failCallback)
+        this.successCallback.push(() => {
+          setTimeout(() => {
+            try {
+              let x = successCallback(this.value)
+              resolvePromise(promise2, x, resolve, reject)
+            } catch (e) {
+              reject(e)
+            }
+          }, 0)
+        })
+        this.failCallback.push(() => {
+          setTimeout(() => {
+            try {
+              let x = failCallback(this.reason)
+              resolvePromise(promise2, x, resolve, reject)
+            } catch (e) {
+              reject(e)
+            }
+          }, 0)
+        })
       }
     })
     // 最终返回这个promise对象
     return promise2
+  }
+
+  // 静态方法
+  static all(array) {
+    // 结果数组
+    let result = []
+    // 计数器
+    let index = 0
+    return new MyPromise((resolve, reject) => {
+      function addData(key, value) {
+        // 通过下标保证顺序正确
+        result[key] = value
+        index++
+        if (index === array.length) {
+          resolve(result)
+        }
+      }
+      for (let i = 0; i < array.length; i++) {
+        let current = array[i]
+        if (current instanceof MyPromise) {
+          // promise 对象
+          current.then(
+            value => addData(i, value),
+            reason => reject(reason)
+          )
+        } else {
+          // 普通值
+          addData(i, array[i])
+        }
+      }
+    })
+  }
+}
+
+function resolvePromise(promise2, x, resolve, reject) {
+  if (promise2 === x) {
+    // 循环调用报的时ypeError错误,拷贝原生Promise的错误提示
+    // 使用return防止代码继续向下执行
+    return reject(
+      new TypeError('TypeError: Chaining cycle detected for promise #<Promise>')
+    )
+  }
+  if (x instanceof MyPromise) {
+    // promise 对象
+    // 调用promise对象的then方法
+    // 如果成功会调用第一个回调，失败则调用第二个回调
+    x.then(resolve, reject)
+  } else {
+    // 普通值
+    resolve(x)
   }
 }
 

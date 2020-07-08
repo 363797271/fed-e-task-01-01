@@ -1,20 +1,18 @@
 const MyPromise = require('./myPromise')
 
-let promise = new MyPromise((resolve, reject) => {
-  resolve('成功')
-  // setTimeout(() => {
-  //   // resolve('成功')
-  //   reject('失败')
-  // }, 2000)
-})
+function p1() {
+  return new MyPromise((resolve, reject) => {
+    setTimeout(() => {
+      resolve('p1')
+    }, 2000)
+  })
+}
+function p2() {
+  return new MyPromise((resolve, reject) => {
+    reject('p2')
+  })
+}
 
-promise.then(
-  value => {
-    console.log(value)
-    return 100
-  }
-).then(
-  value => {
-    console.log(value)
-  }
-)
+MyPromise.all(['a', 'b', p1(), p2(), 'c']).then(result => {
+  console.log(result)
+}, console.log)
