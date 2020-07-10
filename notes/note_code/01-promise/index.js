@@ -1,18 +1,19 @@
 const MyPromise = require('./myPromise')
+const { resolve } = require('./myPromise')
 
 function p1() {
-  return new MyPromise((resolve, reject) => {
-    setTimeout(() => {
-      resolve('p1')
-    }, 2000)
-  })
-}
-function p2() {
-  return new MyPromise((resolve, reject) => {
-    reject('p2')
+  return new MyPromise((resolve) => {
+    resolve('成功')
   })
 }
 
-MyPromise.all(['a', 'b', p1(), p2(), 'c']).then(result => {
-  console.log(result)
-}, console.log)
+p1()
+  .then(value => {
+    console.log(value)
+    throw new Error('then抛出错误')
+  })
+  .catch(reason => {
+    console.log('catch:', reason.message)
+    return 100
+  })
+  .then(console.log)

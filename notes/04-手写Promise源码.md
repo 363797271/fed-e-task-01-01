@@ -1129,7 +1129,7 @@ promise.then().then().then(
 
 Promise.all()是用来解决异步并发的。
 
-它允许按照异步代码调用的顺序得到它们的执行结果。
+它允许按照异步API（代码）调用的顺序得到它们的执行结果。
 
 ```js
 function p1() {
@@ -1253,4 +1253,226 @@ static all(array) {
   })
 }
 ```
+
+## Promise.resolve 方法的实现
+
+Pormise.resolve()方法的作用，是将给定的值转化为promise对象。
+
+即这个方法的返回值就是一个promise对象，并且这个对象包括给定的值。
+
+resolve方法会判断给定的值：
+
+- promise对象：就会将这个promise对象，原封不动的，作为resolve方法的值返回。
+- 普通值：作为 resolve方法 返回的promise对象的值 返回。
+
+```js
+function p1 () {
+  return new Promise((resolve, reject) => {
+    resolve('hello')
+  })
+}
+
+Promise.resolve(10).then(console.log) // 10
+Promise.resolve(p1()).then(console.log) // hello
+```
+
+实现方式：
+
+1. 在promise类中定义resolve的静态方法。
+2. 在方法中判断接收的值的类型：
+   1. promise对象：直接返回值
+   2. 普通值：创建一个promise对象，以这个值为参数，调用执行器的resolve方法（把值包裹在promise对象中，最终返回即可）
+
+```js
+static resolve(value) {
+  if (value instanceof MyPromise) {
+    // promise对象
+    return value
+  } else {
+    // 普通值
+    return new MyPromise(resolve => {
+      resolve(value)
+    })
+  }
+}
+```
+
+```js
+// 使用
+const MyPromise = require('./myPromise')
+
+function p1 () {
+  return new MyPromise((resolve, reject) => {
+    resolve('hello')
+  })
+}
+
+MyPromise.resolve(10).then(console.log) // 10
+MyPromise.resolve(p1()).then(console.log) // hello
+```
+
+## Promise.finally 方法的实现
+
+Promise.finally()有以下特点：
+
+1. 无论Promise的结果是成功还是失败，都会执行finally方法
+2. 在finally方法的后面可以使用then方法获得当前promise对象最终返回的结果
+   1. then方法会越过finally向上寻找最后返回的promise对象
+   2. finally回调参数返回的值不会被后面的then使用
+3. finally回调参数如果返回的是promise对象，后面的then方法就会等待这个对象执行完（状态变更）后才执行。
+   1. 其实就是后面的then方法会等待finally回调执行完之后才执行。
+
+```js
+function p1 () {
+  return new Promise((resolve, reject) => {
+    resolve('hello')
+  })
+}
+
+function p2 () {
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      resolve('waiting end')
+    }, 2000)
+  })
+}
+
+// p1().finally(() => {
+//   console.log('finally')
+//   return 'finally return' // 返回值未被使用
+// }).then(console.log)
+
+// finally
+// hello
+
+// ------
+
+p1().finally(() => {
+  console.log('finally')
+  return p2()
+}).then(console.log) // then会等待finally返回的promise对象状态变更后才执行
+```
+
+实现特点1：
+
+1. 首先确定，finally方法不是promise类的静态方法，需要定义在promise对象的原型对象中（即promise类）
+2. finally方法接收一个回调函数作为参数
+3. 如何在finally方法内获得当前promise对象的结果状态
+   1. 可以通过调用当前promise对象的then方法获得
+
+实现特点2：
+
+1. 实现finally方法后可以链式调用then方法
+   1. finally最终返回一个promise对象即可
+   2. finally方法中调用的then方法，返回的就是promise对象，将这个对象直接返回即可。
+   3. 还需要在这个then方法的回调中，接收成功的值或失败原因，并最终返回或抛出错误。
+
+实现特点3：
+
+1. 使用promise类的resolve方法执行finally回调，在执行完毕后返回当前promise对象的值或失败原因。
+2. 并将resolve方法调用then后的promise对象返回。
+3. 这样就可以实现后面的then方法，会在等待finally的回调方法执行完才执行
+
+```js
+finally(callback) {
+  return this.then(
+    value => {
+      return MyPromise.resolve(callback()).then(() => value)
+    },
+    reason => {
+      return MyPromise.resolve(callback()).then(() => {
+        throw reason
+      })
+    }
+  )
+}
+```
+
+
+
+```js
+// 使用
+const MyPromise = require('./myPromise')
+
+function p1 () {
+  return new MyPromise((resolve, reject) => {
+    resolve('hello')
+  })
+}
+
+function p2 () {
+  return new MyPromise((resolve, reject) => {
+    setTimeout(() => {
+      resolve('waiting end')
+    }, 2000)
+  })
+}
+
+// p1().finally(() => {
+//   console.log('finally')
+//   return 'finally return' // 返回值未被使用
+// }).then(console.log)
+
+// finally
+// hello
+
+// ------
+
+p1().finally(() => {
+  console.log('finally')
+  return p2()
+}).then(console.log) // then会等待finally返回的promise对象状态变更后才执行
+```
+
+## 实现 catch 方法
+
+promise对象的catch方法用于处理promise对象失败的情况。
+
+这就表示调用then方法的时候，是不需要传递 失败回调 的。
+
+当then方法不传递 失败回调 时，失败的情况就会被后面的catch方法捕获。
+
+catch方法会执行传入的回调函数。
+
+并且后面还可以链式调用promise对象的方法。
+
+其实就相当于：
+
+1. catch回调的内部执行then方法，并返回它。
+2. 并且这个then方法只需要接收失败回调（成功回调传undefined）
+3. 而这个失败回调就是catch方法的回调函数参数
+
+```js
+catch(failCallback) {
+  return this.then(undefined, failCallback)
+}
+```
+
+```js
+// 使用
+const MyPromise = require('./myPromise')
+const { resolve } = require('./myPromise')
+
+function p1() {
+  return new MyPromise((resolve) => {
+    resolve('成功')
+  })
+}
+
+p1()
+  .then(value => {
+    console.log(value)
+    throw new Error('then抛出错误')
+  })
+  .catch(reason => {
+    console.log('catch:', reason.message)
+    return 100
+  })
+  .then(console.log)
+
+```
+
+catch方法用于处理promise对象失败的情况。
+
+它其实内部也是调用then方法，只不过不注册成功回调方法。
 

@@ -1,19 +1,28 @@
-function p1() {
+function p1 () {
   return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      resolve('p1')
-    }, 2000)
-  })
-}
-function p2() {
-  return new Promise((resolve, reject) => {
-    reject('p2')
+    resolve('hello')
   })
 }
 
-Promise.all(['a', 'b', p1(), p2(), 'c']).then(result => {
-  // p1 p2同时调用,应该先返回p2再返回p1,且都在a b c后面
-  // 但是最终返回结果:
-  // result -> ['a', 'b', 'p1', 'p2', 'c']
-  console.log(result)
-})
+function p2 () {
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      resolve('waiting end')
+    }, 2000)
+  })
+}
+
+// p1().finally(() => {
+//   console.log('finally')
+//   return 'finally return' // 返回值未被使用
+// }).then(console.log)
+
+// finally
+// hello
+
+// ------
+
+p1().finally(() => {
+  console.log('finally')
+  return p2()
+}).then(console.log) // then会等待finally返回的promise对象状态变更后才执行

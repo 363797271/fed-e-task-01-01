@@ -118,6 +118,23 @@ class MyPromise {
     return promise2
   }
 
+  finally(callback) {
+    return this.then(
+      value => {
+        return MyPromise.resolve(callback()).then(() => value)
+      },
+      reason => {
+        return MyPromise.resolve(callback()).then(() => {
+          throw reason
+        })
+      }
+    )
+  }
+
+  catch(failCallback) {
+    return this.then(undefined, failCallback)
+  }
+
   // 静态方法
   static all(array) {
     // 结果数组
@@ -147,6 +164,18 @@ class MyPromise {
         }
       }
     })
+  }
+
+  static resolve(value) {
+    if (value instanceof MyPromise) {
+      // promise对象
+      return value
+    } else {
+      // 普通值
+      return new MyPromise(resolve => {
+        resolve(value)
+      })
+    }
   }
 }
 
